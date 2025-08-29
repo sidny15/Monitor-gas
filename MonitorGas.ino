@@ -17,6 +17,7 @@ char pass[] = "";
 #define TGS2600_PIN 34   // GPIO34 (Analog ADC1_CH6)
 #define MQ136_PIN 35     // GPIO35 (Analog ADC1_CH7)
 #define buz 4
+
 // Calibration values - adjust based on your sensors
 #define TGS2600_RLOAD 10.0  // Load resistance in kOhms
 #define MQ136_RLOAD 10.0     // Load resistance in kOhms
@@ -27,7 +28,70 @@ float mq136_ratio = 0;
 float tgs2600_ppm = 0;
 float mq136_ppm = 0;
 
+// Variables for buzzer control
+unsigned long previousBuzzerMillis = 0;
+int buzzerState = LOW;
+int beepCount = 0;
+int maxBeeps = 0;
+int beepInterval = 0;
+
 BlynkTimer timer;
+
+void controlBuzzer() {
+  // Determine which sensor has higher ppm
+  float max_ppm = max(tgs2600_ppm, mq136_ppm);
+  
+  // Reset buzzer logic if ppm is below 20
+  if (max_ppm <= 20) {
+    digitalWrite(buz, LOW);
+    beepCount = 0;
+    return;
+  }
+  
+  // Determine buzzer pattern based on ppm level
+  if (max_ppm > 20 && max_ppm <= 50) {
+    // 1-3 beeps with 300ms interval
+    maxBeeps = map(max_ppm, 21, 50, 1, 3);
+    beepInterval = 300;
+  } 
+  else if (max_ppm > 50 && max_ppm <= 100) {
+    // Long beep with 1 second interval
+    maxBeeps = 1;
+    beepInterval = 1000;
+  }
+  else if (max_ppm > 100 && max_ppm <= 400) {
+    // Continuous beep
+    maxBeeps = 1;
+    beepInterval = 300;
+  }
+  else if (max_ppm > 400) {
+    // For ppm above 400, turn off buzzer (or implement different behavior)
+    digitalWrite(buz, LOW);
+    return;
+  }
+  
+  // Handle buzzer patterns
+  unsigned long currentMillis = millis();
+  
+  if (currentMillis - previousBuzzerMillis >= beepInterval) {
+    previousBuzzerMillis = currentMillis;
+    
+    if (buzzerState == LOW && beepCount < maxBeeps) {
+      buzzerState = HIGH;
+      digitalWrite(buz, buzzerState);
+      beepCount++;
+    } 
+    else {
+      buzzerState = LOW;
+      digitalWrite(buz, buzzerState);
+      
+      // If we've completed all beeps, reset for next cycle
+      if (beepCount >= maxBeeps) {
+        beepCount = 0;
+      }
+    }
+  }
+}
 
 void readSensors() {
   // Read TGS2600 sensor
@@ -41,6 +105,7 @@ void readSensors() {
   float mq136_voltage = mq136_raw * (3.3 / 4095.0);
   float mq136_rs = ((5.0 - mq136_voltage) / mq136_voltage) * MQ136_RLOAD;
   mq136_ratio = mq136_rs / MQ136_RLOAD;
+  
   tgs2600_ppm = pow(10, (log10(tgs2600_ratio) - 0.8) / -0.5); // Example for air quality
   mq136_ppm = pow(10, (log10(mq136_ratio) - 0.6) / -0.8);     // Example for H2S
   
@@ -49,14 +114,10 @@ void readSensors() {
   Blynk.virtualWrite(V1, mq136_ppm);    // Virtual pin V1 for MQ136
   Blynk.virtualWrite(V2, tgs2600_voltage); // Raw voltage for debugging
   Blynk.virtualWrite(V3, mq136_voltage);   // Raw voltage for debugging
-  if(tgs2600_ppm > 100 || mq136_ppm > 100){
-    digitalWrite(buz,HIGH);
-    delay(300);
-    digitalWrite(buz, LOW);
-    delay(300);
-  }else{
-    digitalWrite(buz,LOW);
-  }
+  
+  // Control buzzer based on sensor readings
+  controlBuzzer();
+  
   // Print to serial for debugging
   Serial.print("TGS2600 - PPM: ");
   Serial.print(tgs2600_ppm);
@@ -71,6 +132,13 @@ void readSensors() {
   Serial.print(mq136_voltage);
   Serial.print(" | Ratio: ");
   Serial.println(mq136_ratio);
+  
+  // Print buzzer status
+  float max_ppm = max(tgs2600_ppm, mq136_ppm);
+  Serial.print("Max PPM: ");
+  Serial.print(max_ppm);
+  Serial.print(" | Buzzer: ");
+  Serial.println(digitalRead(buz) ? "ON" : "OFF");
 }
 
 void setup() {
@@ -79,6 +147,7 @@ void setup() {
   timer.setInterval(2000L, readSensors);
   analogSetAttenuation(ADC_11db); 
   pinMode(buz, OUTPUT);
+  digitalWrite(buz, LOW);
   Serial.println("System started");
 }
 
