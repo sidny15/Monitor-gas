@@ -108,7 +108,7 @@ void readSensors() {
   
   tgs2600_ppm = pow(10, (log10(tgs2600_ratio) - 0.8) / -0.5); // Example for air quality
   mq136_ppm = pow(10, (log10(mq136_ratio) - 0.6) / -0.8);     // Example for H2S
-  
+  tgs2600_ppm = map(tgs2600_ppm, 0, 1000, 0,3000);
   // Send data to Blynk
   Blynk.virtualWrite(V0, tgs2600_ppm);  // Virtual pin V0 for TGS2600
   Blynk.virtualWrite(V1, mq136_ppm);    // Virtual pin V1 for MQ136
